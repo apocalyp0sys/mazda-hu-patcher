@@ -22,6 +22,28 @@ echo "== local payload / remote-script self-check =="
 python3 "$ROOT/hu_patcher.py" --self-check || exit 1
 
 echo
+echo "== operation log =="
+LOGFILE=$(mktemp) || exit 1
+if ! python3 "$ROOT/hu_patcher.py" --self-check --log "$LOGFILE" \
+    >/dev/null 2>&1; then
+    echo "FAIL - self-check with --log"
+    rm -f "$LOGFILE"
+    exit 1
+fi
+if ! grep -q "=== HU patcher" "$LOGFILE"; then
+    echo "FAIL - log header missing"
+    rm -f "$LOGFILE"
+    exit 1
+fi
+if ! grep -q "SELF-CHECK: OK" "$LOGFILE"; then
+    echo "FAIL - self-check output missing from log"
+    rm -f "$LOGFILE"
+    exit 1
+fi
+rm -f "$LOGFILE"
+echo "ok   - detailed operation log"
+
+echo
 echo "== patch tools reproduce payloads =="
 TMPD=$(mktemp -d) || exit 1
 python3 - "$ROOT" "$TMPD" <<'PY' || exit 1

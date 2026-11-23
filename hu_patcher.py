@@ -29,6 +29,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -36,6 +37,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 
 from patch_loader import PatchConfigError, load_patches
@@ -58,6 +60,147 @@ except PatchConfigError as e:
     raise SystemExit("ERROR: invalid patch configuration: %s" % e)
 
 PAUSE_ON_EXIT = True
+
+# ---------------------------------------------------------------------------
+# operation log
+# ---------------------------------------------------------------------------
+LOG_FILE = None
+LOG_PATH = None
+LOG_ORIG_STDOUT = None
+LOG_ORIG_STDERR = None
+
+
+class _Tee:
+    """Duplicate stdout/stderr writes into the operation log."""
+
+    def __init__(self, stream, log):
+        self.stream = stream
+        self.log = log
+
+    def write(self, data):
+        if self.stream is not None:
+            self.stream.write(data)
+        if self.log is not None:
+            self.log.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in (self.stream, self.log):
+            if stream is not None:
+                try:
+                    stream.flush()
+                except Exception:
+                    pass
+
+    def isatty(self):
+        return bool(getattr(self.stream, "isatty", lambda: False)())
+
+    @property
+    def encoding(self):
+        return getattr(self.stream, "encoding", "utf-8")
+
+    @property
+    def errors(self):
+        return getattr(self.stream, "errors", "replace")
+
+
+def log_only(message):
+    """Write a timestamped line to the log without printing it."""
+    if LOG_FILE is None:
+        return
+    try:
+        LOG_FILE.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"),
+                                    message))
+        LOG_FILE.flush()
+    except Exception:
+        pass
+
+
+def log_block(tag, text):
+    """Write a multi-line block with a tag prefix."""
+    lines = (text or "").splitlines()
+    if not lines:
+        lines = [""]
+    for line in lines:
+        log_only("[%s] %s" % (tag, line))
+
+
+def choose_log_path(args):
+    """Return the log path, or None when logging is disabled."""
+    if getattr(args, "no_log", False) or \
+            os.environ.get("HU_PATCHER_NO_LOG") == "1":
+        return None
+    if getattr(args, "log", None):
+        path = Path(args.log).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path
+    if getattr(args, "self_check", False):
+        return None
+    return HERE / "logs" / ("hu_patcher-%s.log" % time.strftime("%Y%m%d-%H%M%S"))
+
+
+def start_logging(path, args):
+    global LOG_FILE, LOG_PATH, LOG_ORIG_STDOUT, LOG_ORIG_STDERR
+    if path is None:
+        return
+    stream = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stream = open(path, "w", encoding="utf-8", newline="\n")
+    except OSError as exc:
+        fallback = Path(tempfile.gettempdir()) / path.name
+        try:
+            stream = open(fallback, "w", encoding="utf-8", newline="\n")
+            path = fallback
+        except OSError:
+            print("WARNING: cannot open log file %s: %s" % (path, exc),
+                  file=sys.stderr)
+            return
+    LOG_FILE = stream
+    LOG_PATH = path
+    LOG_ORIG_STDOUT = sys.stdout
+    LOG_ORIG_STDERR = sys.stderr
+    sys.stdout = _Tee(sys.stdout, stream)
+    sys.stderr = _Tee(sys.stderr, stream)
+
+    log_only("=== HU patcher %s ===" % read_version())
+    log_only("started: %s" % time.strftime("%Y-%m-%d %H:%M:%S"))
+    log_only("python: %s" % sys.version.replace("\n", " "))
+    log_only("os: %s" % platform.platform())
+    log_only("host: %s" % (getattr(args, "host", None) or "(prompted)"))
+    log_only("port: %s" % getattr(args, "port", 22))
+    log_only("key: %s" % (getattr(args, "key", None) or "(auto)"))
+    log_only("self-check: %s" % getattr(args, "self_check", False))
+    log_only("===")
+
+
+def stop_logging(rc):
+    global LOG_FILE, LOG_PATH, LOG_ORIG_STDOUT, LOG_ORIG_STDERR
+    if LOG_FILE is None:
+        return
+    log_only("finished: %s exit=%s" %
+             (time.strftime("%Y-%m-%d %H:%M:%S"), rc))
+    try:
+        LOG_FILE.flush()
+    except Exception:
+        pass
+    sys.stdout = LOG_ORIG_STDOUT or sys.__stdout__
+    sys.stderr = LOG_ORIG_STDERR or sys.__stderr__
+    try:
+        LOG_FILE.close()
+    except Exception:
+        pass
+    LOG_FILE = None
+    LOG_ORIG_STDOUT = None
+    LOG_ORIG_STDERR = None
+
+
+def log_exception():
+    if LOG_FILE is not None:
+        log_block("traceback", traceback.format_exc())
+
+
 
 STATUS_INSTALLED = "Installed"
 STATUS_NOT_INSTALLED = "Not installed"
@@ -903,6 +1046,11 @@ class Ssh:
         return args, None
 
     def run(self, user, command, input_text=None, batch=True, timeout=60):
+        started = time.time()
+        log_only("[ssh] %s@%s$ %s (timeout=%ss)" %
+                 (user, self.host, command, timeout))
+        if input_text is not None:
+            log_block("ssh-script", input_text)
         args = self._ssh_args(user, batch)
         args.append(command)
         env = None
@@ -910,20 +1058,29 @@ class Ssh:
             args, env = self._media_prefix(args)
         try:
             if input_text is not None:
-                return _run_script(args, input_text, timeout=timeout, env=env)
-            return subprocess.run(
-                args, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=timeout, env=env,
-            )
+                result = _run_script(args, input_text, timeout=timeout, env=env)
+            else:
+                result = subprocess.run(
+                    args, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=timeout, env=env,
+                )
         except subprocess.TimeoutExpired as e:
             out = e.stdout or ""
             if isinstance(out, bytes):
                 out = out.decode("utf-8", "replace")
-            return subprocess.CompletedProcess(args, 124,
-                                               out + "\nTIMEOUT", "")
+            result = subprocess.CompletedProcess(args, 124,
+                                                 out + "\nTIMEOUT", "")
+        log_only("[ssh] rc=%s elapsed=%.1fs" %
+                 (result.returncode, time.time() - started))
+        log_block("ssh-out", result.stdout or "")
+        return result
 
     def scp(self, user, sources, remote, batch=True, timeout=180):
+        started = time.time()
+        names = ", ".join(Path(s).name for s in sources)
+        log_only("[scp] %s -> %s@%s:%s (timeout=%ss)" %
+                 (names, user, self.host, remote, timeout))
         args = ["scp", "-O", "-P", str(self.port)] + self._common_opts()
         if batch:
             args += ["-o", "BatchMode=yes"]
@@ -935,12 +1092,16 @@ class Ssh:
         if user == "media":
             args, env = self._media_prefix(args)
         try:
-            return subprocess.run(args, text=True, stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, timeout=timeout,
-                                  env=env)
+            result = subprocess.run(args, text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=timeout,
+                                    env=env)
         except subprocess.TimeoutExpired as e:
-            return subprocess.CompletedProcess(args, 124,
-                                               (e.stdout or "") + "\nTIMEOUT", "")
+            result = subprocess.CompletedProcess(
+                args, 124, (e.stdout or "") + "\nTIMEOUT", "")
+        log_only("[scp] rc=%s elapsed=%.1fs" %
+                 (result.returncode, time.time() - started))
+        log_block("scp-out", result.stdout or "")
+        return result
 
     def run_retry(self, user, command, input_text=None, batch=True,
                   timeout=60, attempts=3):
@@ -968,13 +1129,18 @@ def ask_yes(question, default=True):
             ans = input("%s %s: " % (question, suffix)).strip().lower()
         except EOFError:
             # No terminal input: never assume "yes" for a change/reboot.
+            log_only("[prompt] %s -> EOF (no)" % question)
             print()
             return False
         if not ans:
+            log_only("[prompt] %s -> default %s" %
+                     (question, "yes" if default else "no"))
             return default
         if ans in ("y", "yes"):
+            log_only("[prompt] %s -> yes" % question)
             return True
         if ans in ("n", "no"):
+            log_only("[prompt] %s -> no" % question)
             return False
         print("  Please answer y/n.")
 
@@ -983,9 +1149,11 @@ def ask_text(question, default=""):
     try:
         ans = input("%s%s: " % (question, (" [%s]" % default) if default else ""))
     except EOFError:
+        log_only("[prompt] %s -> EOF (default %r)" % (question, default))
         return default
-    ans = ans.strip()
-    return ans if ans else default
+    ans = ans.strip() or default
+    log_only("[prompt] %s -> %r" % (question, ans))
+    return ans
 
 
 def pause_before_exit():
@@ -1066,29 +1234,36 @@ def reboot_command_failed(out, returncode):
 
 def wait_for_reboot(ssh, old_boot_id, timeout=90, interval=3):
     print("Waiting for the reboot", end="", flush=True)
+    log_only("[reboot] wait for boot change (old=%s, timeout=%ss)" %
+             (old_boot_id, timeout))
     deadline = time.time() + timeout
     while time.time() < deadline:
         if old_boot_id:
             new_id = media_boot_id(ssh)
             if new_id is None or new_id != old_boot_id:
                 print(" reboot detected")
+                log_only("[reboot] detected (new=%r)" % new_id)
                 return True
         elif root_ok(ssh, timeout=45):
             print(" root is available")
+            log_only("[reboot] root is available")
             return True
         print(".", end="", flush=True)
         time.sleep(interval)
     print(" not detected")
+    log_only("[reboot] not detected within %ss" % timeout)
     return False
 
 
 def wait_root(ssh, timeout=300, interval=5):
     print("Waiting for root SSH", end="", flush=True)
+    log_only("[root] wait for root SSH (timeout=%ss)" % timeout)
     deadline = time.time() + timeout
     while time.time() < deadline:
         ok, state = root_probe(ssh, timeout=45)
         if ok:
             print(" OK")
+            log_only("[root] root SSH is back")
             return True
         if state == "denied":
             print(".", end="", flush=True)
@@ -1096,6 +1271,7 @@ def wait_root(ssh, timeout=300, interval=5):
             print("+", end="", flush=True)
         time.sleep(interval)
     print(" timeout")
+    log_only("[root] root SSH did not return within %ss" % timeout)
     return False
 
 
@@ -1216,6 +1392,8 @@ def patch_state_payload(patch):
 def write_patch_state(ssh, patch):
     payload = shlex.quote(patch_state_payload(patch))
     path = shlex.quote(patch_state_path(patch["key"]))
+    log_only("[state] write %s (version %s)" %
+             (patch_state_path(patch["key"]), patch["version"]))
     script = ("mkdir -p %s\nprintf '%%s\\n' %s > %s\n" %
               (shlex.quote(STATE_DIR), payload, path))
     r = ssh.run_retry("root", "sh -s", input_text=script, timeout=60)
@@ -1227,6 +1405,7 @@ def write_patch_state(ssh, patch):
 
 
 def remove_patch_state(ssh, patch):
+    log_only("[state] remove %s" % patch_state_path(patch["key"]))
     r = ssh.run_retry(
         "root", "rm -f %s" % shlex.quote(patch_state_path(patch["key"])),
         timeout=60)
@@ -1464,6 +1643,17 @@ def snapshot_status(ssh):
             "state": state,
             "installed_version": installed_version,
         }
+    for patch in PATCHES:
+        entry = result[patch["id"]]
+        log_only("[status] %s) %s: %s installed=%s current=%s" %
+                 (patch["id"], patch["name"], entry["status"],
+                  entry["installed_version"] or "-", patch["version"]))
+        for file_spec, file_status, value in entry["details"]:
+            log_only("[status]   %s: %s %s" %
+                     (file_spec["target"], file_status, value or ""))
+        if entry["state"]:
+            log_only("[status]   saved state version: %s" %
+                     entry["state"].get("version"))
     return result
 
 
@@ -2072,6 +2262,8 @@ def candidate_keys(explicit):
 def find_root(ssh, args, keys=None):
     if keys is None:
         keys = candidate_keys(args.key)
+    log_only("[root] key candidates: %s" %
+             (", ".join(str(k) for k in keys) or "(none)"))
     if not keys and not args.key:
         print("  no SSH keys found in %s" % (Path.home() / ".ssh"))
     last_state = None
@@ -2081,6 +2273,7 @@ def find_root(ssh, args, keys=None):
         ssh.key = key
         print("  trying root key: %s" % key)
         ok, state = root_probe(ssh)
+        log_only("[root] probe %s -> %s" % (key, state))
         if ok:
             print("Root access OK with %s" % key)
             return key
@@ -2095,6 +2288,7 @@ def find_root(ssh, args, keys=None):
         print("The key was not rejected; the HU may just be slow to open SSH.")
         if ask_yes("Retry the root probe with a longer timeout?", True):
             ok, state = root_probe(ssh, timeout=180)
+            log_only("[root] retry probe %s -> %s" % (ssh.key, state))
             if ok:
                 print("Root access OK with %s" % ssh.key)
                 return ssh.key
@@ -2440,6 +2634,11 @@ def undo_applied_files(ssh, applied, mode):
 def perform_patch(ssh, patch, mode):
     print()
     label = "%s) %s" % (patch["id"], patch["name"])
+    log_only("[patch] %s: %s (version %s)" %
+             (label, "install" if mode == "install" else "rollback",
+              patch["version"]))
+    for file_spec in patch["files"]:
+        log_only("[patch]   %s %s" % (file_spec["op"], file_spec["target"]))
     print("== %s: %s ==" % (label, "install" if mode == "install" else "rollback"))
 
     remote_dir = "/tmp"
@@ -2447,6 +2646,7 @@ def perform_patch(ssh, patch, mode):
     if not uploaded:
         print("ERROR: could not upload/verify files.")
         return False
+    log_only("[patch] uploaded %d file(s)" % len(uploaded))
 
     state = {}
     if mode == "install":
@@ -2464,6 +2664,8 @@ def perform_patch(ssh, patch, mode):
         file_spec = item["file"]
         result, out = run_apply(ssh, file_spec, mode,
                                 item["remote_new"], item["remote_orig"])
+        log_only("[patch] %s %s -> %s" %
+                 (mode, file_spec["target"], result))
         if result == "CONFLICT":
             print("CONFLICT: %s: unknown file version. No changes left in place." %
                   file_spec["target"])
@@ -2496,6 +2698,7 @@ def perform_patch(ssh, patch, mode):
         write_patch_state(ssh, patch)
     else:
         remove_patch_state(ssh, patch)
+    log_only("[patch] %s done" % mode)
     return True
 
 
@@ -2602,6 +2805,9 @@ def upload_old_originals(ssh, patch, specs):
 
 def perform_patch_update(ssh, patch, state):
     print("Updating %s) %s ..." % (patch["id"], patch["name"]))
+    log_only("[update] %s: %s -> %s" %
+             (patch["id"], state.get("version") if state else "?",
+              patch["version"]))
     if not state:
         print("ERROR: no saved state for the installed version; cannot update "
               "safely.")
@@ -2619,6 +2825,7 @@ def perform_patch_update(ssh, patch, state):
         if installed_now:
             print("Current files already match the new version; updating "
                   "state only.")
+            log_only("[update] files already match; refreshing state")
             write_patch_state(ssh, patch)
             return True
 
@@ -2626,6 +2833,7 @@ def perform_patch_update(ssh, patch, state):
         print("ERROR: installed files do not match the saved old version.")
         print("       Refusing to update; remove the patch manually and "
               "install it again.")
+        log_only("[update] old files do not match the saved state; refused")
         return False
 
     originals = upload_old_originals(ssh, patch, specs)
@@ -2635,6 +2843,8 @@ def perform_patch_update(ssh, patch, state):
     for spec in specs:
         result, _out = run_apply(
             ssh, spec, "rollback", None, originals.get(spec["target"]))
+        log_only("[update] remove old %s -> %s" %
+                 (spec["target"], result))
         if result not in ("OK", "ALREADY"):
             print("ERROR: cannot remove the old version of %s." % spec["target"])
             print("       The update was stopped; check the patch status.")
@@ -2644,6 +2854,7 @@ def perform_patch_update(ssh, patch, state):
         print("ERROR: old version removed but the new install failed.")
         print("       Run the patcher again to install the new version.")
         return False
+    log_only("[update] %s updated to %s" % (patch["id"], patch["version"]))
     return True
 
 
@@ -2729,10 +2940,13 @@ def print_action_menu(actions, selected):
 
 def menu_input(prompt):
     try:
-        return input("%s: " % prompt).strip()
+        value = input("%s: " % prompt).strip()
     except EOFError:
+        log_only("[menu] %s -> EOF (quit)" % prompt)
         print()
         return "q"
+    log_only("[menu] %s -> %r" % (prompt, value))
+    return value
 
 
 def select_patch_actions(actions):
@@ -2744,16 +2958,22 @@ def select_patch_actions(actions):
             if not selected:
                 print("  Nothing selected. Enter numbers, a, or q.")
                 continue
+            log_only("[menu] selected: %s" %
+                     ", ".join(actions[i]["patch"]["id"]
+                               for i in sorted(selected)))
             return selected
         command = raw.lower()
         if command in ("q", "quit"):
+            log_only("[menu] quit without changes")
             return None
         if command == "a":
             selected = {i for i, action in enumerate(actions)
                         if action["selectable"]}
+            log_only("[menu] select all")
             continue
         if command == "n":
             selected = set()
+            log_only("[menu] select none")
             continue
         for token in re.split(r"[\s,]+", raw):
             if not token:
@@ -2800,6 +3020,8 @@ def apply_patch_actions(ssh, actions, selected):
         action = actions[index]
         patch = action["patch"]
         mode = action["mode"]
+        log_only("[apply] %s) %s: %s" % (patch["id"], patch["name"],
+                                          mode or "?"))
         ok = False
         for attempt in range(1, 4):
             if mode == "update":
@@ -2849,6 +3071,7 @@ def root_probe_boot_id(ssh, timeout=45):
 
 def reboot_root(ssh, timeout=300):
     old_id = remote_boot_id(ssh)
+    log_only("[reboot] root reboot (old boot id=%s)" % old_id)
     print("Rebooting HU ...")
     ssh.run("root", "sync; (reboot >/dev/null 2>&1 &); true", timeout=60)
     time.sleep(5)
@@ -2858,10 +3081,12 @@ def reboot_root(ssh, timeout=300):
         ok, new_id = root_probe_boot_id(ssh)
         if ok and (old_id is None or (new_id and new_id != old_id)):
             print(" OK")
+            log_only("[reboot] new boot id=%s" % new_id)
             return True
         print(".", end="", flush=True)
         time.sleep(5)
     print(" timeout")
+    log_only("[reboot] root did not return within %ss" % timeout)
     return False
 
 
@@ -2913,13 +3138,21 @@ def main():
                     help="colorize patch status (default: auto)")
     ap.add_argument("--no-pause", action="store_true",
                     help="do not wait for input before exit")
+    log_group = ap.add_mutually_exclusive_group()
+    log_group.add_argument("--log", metavar="FILE",
+                           help="write a detailed operation log to FILE")
+    log_group.add_argument("--no-log", action="store_true",
+                           help="disable the automatic operation log")
     args = ap.parse_args()
 
     global PAUSE_ON_EXIT
     PAUSE_ON_EXIT = not args.no_pause
 
+    start_logging(choose_log_path(args), args)
     setup_color(args.color)
     print_banner()
+    if LOG_PATH is not None:
+        print("[i] log: %s" % LOG_PATH)
 
     if args.self_check:
         ok = validate_local(verbose=True)
@@ -2946,6 +3179,7 @@ def main():
         args.host = ask_text("HU IP/hostname")
     if not args.host:
         ap.error("host is required (or use --self-check)")
+    log_only("[info] target: %s:%s" % (args.host, args.port))
     if not check_tools():
         return 1
     if not validate_local(verbose=False):
@@ -3025,13 +3259,23 @@ def main():
 
 
 def _run():
+    rc = 1
     try:
-        return main()
+        rc = main()
+        return rc
     except KeyboardInterrupt:
         print("\nInterrupted.")
-        return 130
+        rc = 130
+        return rc
+    except SystemExit as exc:
+        rc = exc.code if isinstance(exc.code, int) else 1
+        raise
+    except Exception:
+        log_exception()
+        raise
     finally:
         pause_before_exit()
+        stop_logging(rc)
 
 
 if __name__ == "__main__":

@@ -547,7 +547,7 @@ def main():
 
         # The real patcher main(); all stages and prompts are reused.
         sys.argv = [sys.argv[0], "mock-hu", "--key", str(key),
-                    "--color", args.color]
+                    "--color", args.color, "--no-log"]
         rc = hp.main()
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

@@ -7,6 +7,15 @@ and this project uses semantic versioning (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
+### Added
+
+- Detailed operation log. By default the patcher writes
+  `logs/hu_patcher-YYYYMMDD-HHMMSS.log` with the patcher environment, every
+  SSH/SCP command and output, patch status/versions, install/rollback/update
+  decisions and reboot waits. Use `--log FILE`, `--no-log` or
+  `HU_PATCHER_NO_LOG=1` to control it. Passwords and private key contents are
+  never logged.
+
 ## [v0.2.0] - 2026-11-23
 
 ### Added

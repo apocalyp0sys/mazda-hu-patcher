@@ -213,6 +213,9 @@ handles this.
 - Keep the interactive pause before exit unless `--no-pause` or
   `HU_PATCHER_NO_PAUSE=1` is set; tests and mock mode must not block.
 - Keep user-facing messages and status strings in English.
+- Keep the operation log detailed: SSH/SCP commands and outputs, patch state,
+  updates and reboot waits. Never write passwords or private key contents.
+  Tests and mock runs must use `--no-log` or `HU_PATCHER_NO_LOG=1`.
 - Status colors: `Installed` green, `Not installed` yellow, `Conflict` red,
   `Partial` cyan.
 - Bootstrap must remain fail-safe and must not modify boot/kernel files.

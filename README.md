@@ -98,6 +98,8 @@ python3 hu_patcher.py 192.168.50.1 --port 22
 python3 hu_patcher.py 192.168.50.1 --color never
 python3 hu_patcher.py --self-check
 python3 hu_patcher.py 192.168.50.1 --no-pause
+python3 hu_patcher.py 192.168.50.1 --log my-run.log
+python3 hu_patcher.py 192.168.50.1 --no-log
 ```
 
 In an interactive terminal the patcher waits for input before exiting, so the
@@ -394,6 +396,40 @@ Common options: `-UpdateBin <path>`, `-OutDir <dir>` (for `build`),
 `-Version <tag>` (for `build-release`), `-Image <tag>` and `-BuildImage`.
 For development releases, `build-release` also accepts `-AllowUnreleased`
 and `-AllowVersionMismatch`.
+
+## Operation log
+
+By default the patcher writes a detailed log to:
+
+```text
+logs/hu_patcher-YYYYMMDD-HHMMSS.log
+```
+
+If `logs/` cannot be created, it falls back to the system temp directory. The
+log is also written when `--log FILE` is given explicitly. `logs/` is ignored
+by Git.
+
+The log contains:
+
+- patcher version, OS, Python version, target/port, key path, options;
+- every SSH/SCP command, its duration, exit code and full output;
+- remote scripts sent over `sh -s`;
+- status snapshot, patch versions, installed state;
+- every install/rollback/update decision and per-file result;
+- reboot/boot-id waits and errors.
+
+Disable it with:
+
+```sh
+python3 hu_patcher.py <HU> --no-log
+# or
+HU_PATCHER_NO_LOG=1 python3 hu_patcher.py <HU>
+```
+
+`--self-check` does not create the automatic log; combine it with
+`--log FILE` if you want one. Passwords and private key contents are never
+written. The log may contain hostnames, key paths and command output; review it
+before sharing publicly.
 
 ## Statuses
 
