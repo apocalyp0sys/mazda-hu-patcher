@@ -1,0 +1,37 @@
+{
+  "schema": 2,
+  "id": "C",
+  "key": "callfix",
+  "name": "Callfix (loudness)",
+  "version": "1.0.0",
+  "description": "Re-asserts loudness OFF after a phone call. Installs the svp-callfix daemon and its systemd unit; rollback stops and removes both.",
+  "order": 30,
+  "enabled": true,
+  "hook": "hook.py",
+  "files": [
+    {
+      "op": "create",
+      "target": "/svp/bin/svp-callfix",
+      "patched": "svp-callfix",
+      "sha256": {
+        "patched": "f30a5a05f06d2b08c7f5dea356d747f2d58fcf4422fcfce92d789473e960d9e2"
+      },
+      "mode": "0755"
+    },
+    {
+      "op": "create",
+      "target": "/etc/systemd/system/svp-callfix.service",
+      "patched": "svp-callfix.service",
+      "sha256": {
+        "patched": "b88c895f0a65ac7869befd1c5bc748948cd621d280c832a48ee3af790ce809ca"
+      },
+      "mode": "0644"
+    },
+    {
+      "op": "symlink",
+      "target": "/etc/systemd/system/multi-user.target.wants/svp-callfix.service",
+      "link": "/etc/systemd/system/svp-callfix.service",
+      "create_dirs": true
+    }
+  ]
+}

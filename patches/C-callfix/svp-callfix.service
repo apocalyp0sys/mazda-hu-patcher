@@ -1,0 +1,22 @@
+[Unit]
+Description=svp-callfix (loudness re-assert after BT call)
+ConditionPathExists=/svp/bin/svp-callfix
+After=svp-launcher.service
+Wants=svp-launcher.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/svp/bin/svp-callfix
+Environment=LD_LIBRARY_PATH=/svp/lib/someip:/svp/lib:/usr/lib64
+Environment=COMMONAPI_DEFAULT_BINDING=someip
+Environment=COMMONAPI_CONFIG=/svp/etc/someip/commonapi.ini
+Environment=VSOMEIP_CONFIGURATION=/svp/etc/vsomeip.json
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

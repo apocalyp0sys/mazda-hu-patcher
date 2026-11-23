@@ -1,0 +1,27 @@
+# User-supplied firmware image (never commit)
+firmware/update.bin
+firmware/*.bin
+firmware/*.img
+
+# Generated patch payloads (produced by patches/build.sh)
+patches/*/*.orig
+patches/*/*.patched
+
+# Release artifacts
+dist/
+*.zip
+
+# Python
+**/__pycache__/
+*.py[cod]
+
+# Private keys (never commit)
+id_ed25519
+id_rsa
+id_ecdsa
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

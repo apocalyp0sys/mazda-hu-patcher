@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "B",
+  "key": "touch",
+  "name": "touch while driving (svp.svc.engineering)",
+  "version": "1.0.0",
+  "description": "Make the speed-based disable_touch branch unreachable",
+  "order": 20,
+  "enabled": true,
+  "target": "/svp/bin/svp.svc.engineering",
+  "backup_name": "svp.svc.engineering",
+  "original": "svp.svc.engineering.orig",
+  "patched": "svp.svc.engineering.patched",
+  "sha256": {
+    "original": "c46bc285bd20813ca7374b10069cda9f5f76bc7edd53f5b1e759d056087e61ed",
+    "patched": "4419a2aa049cbda00b7b1dd0f4a72e6c9a991e70334d6d7546d641c5525131a3"
+  },
+  "verify": {
+    "offset": "0x630A8",
+    "from": "a9180054",
+    "to": "c5000014"
+  },
+  "build": {
+    "fs": "fs4",
+    "source": "/bin/svp.svc.engineering",
+    "tool": "patch_engineering_touch.py"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "A",
+  "key": "gps",
+  "name": "GPS/timezone (libsvp_basic.so)",
+  "version": "1.0.0",
+  "description": "SVPTime::setZoneTime -> setSystemTime (GPS UTC; local time via /etc/localtime)",
+  "order": 10,
+  "enabled": true,
+  "target": "/svp/lib/libsvp_basic.so",
+  "backup_name": "libsvp_basic.so",
+  "original": "libsvp_basic.so.orig",
+  "patched": "libsvp_basic.so.patched",
+  "sha256": {
+    "original": "d7ae14f24fc631d2e23ab5fc745ff8248660b1b62253b1ec3e48c21d5097367a",
+    "patched": "bf26789698fd224ed6e99537d17756568fd48ad1cc854111f9ba9ff4787625c4"
+  },
+  "verify": {
+    "offset": "0x4A70",
+    "from": "fd7bbda9",
+    "to": "88feff17"
+  },
+  "build": {
+    "fs": "fs4",
+    "source": "/lib/libsvp_basic.so",
+    "tool": "patch_gps_timezone.py"
+  },
+  "hook": "hook.py"
+}

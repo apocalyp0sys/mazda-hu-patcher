@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.ps1  text eol=lf
+*.pub  text eol=lf
+*.md   text eol=lf
+*.cmd  text eol=crlf
+
+*.zip  binary
+*.orig binary
+*.patched binary
+patches/*/svp-callfix binary
