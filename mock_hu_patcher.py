@@ -41,11 +41,11 @@ SCENARIOS = {
         "timezone": "Asia/Shanghai",
         "answers": [
             "y",        # bootstrap via media?
-            "y",        # reboot now?
+            "",         # manual reboot prompt after bootstrap
             "1 2 3 4",  # select all patches
             "",         # apply the selection
             "+3",       # timezone for A
-            "y",        # final reboot
+            "",         # final manual reboot
         ],
     },
     "root-one": {
@@ -60,7 +60,7 @@ SCENARIOS = {
         "answers": [
             "1 2 3 4",  # A rollback, B/C/D install
             "",         # apply the selection
-            "y",        # final reboot
+            "",         # final manual reboot
         ],
     },
     "conflict": {
@@ -72,29 +72,27 @@ SCENARIOS = {
         "timezone": "Asia/Shanghai",
         "answers": [
             "y",        # bootstrap via media?
-            "y",        # reboot now?
+            "",         # manual reboot prompt after bootstrap
             "1 2 3 4",  # select all; B is skipped as conflict
             "",         # apply the selection
             "+3",       # timezone for A
-            "y",        # final reboot
+            "",         # final manual reboot
         ],
     },
     "manual-reboot": {
-        "title": "media cannot reboot; the user reboots manually",
+        "title": "no root, manual reboot instruction",
         "root": False,
-        "manual_reboot": True,
         "gps": "original",
         "touch": "original",
         "localtime": "/usr/share/zoneinfo/Asia/Shanghai",
         "timezone": "Asia/Shanghai",
         "answers": [
             "y",        # bootstrap via media?
-            "y",        # reboot now?
-            "",         # press Enter after the manual reboot
+            "",         # manual reboot prompt after bootstrap
             "1 2 3 4",  # select all patches
             "",         # apply the selection
             "+3",       # timezone for A
-            "y",        # final reboot
+            "",         # final manual reboot
         ],
     },
     "outdated": {
@@ -116,7 +114,7 @@ SCENARIOS = {
         "answers": [
             "3",        # select C) Callfix for update
             "",         # apply the selection
-            "y",        # final reboot
+            "",         # final manual reboot
         ],
     },
     "newer": {
@@ -148,7 +146,6 @@ class MockState:
         self.title = spec["title"]
         self.root = spec["root"]
         self.media = True
-        self.manual_reboot = spec.get("manual_reboot", False)
         self.patches = {
             p["key"]: {f["target"]: "original" for f in p["files"]}
             for p in hp.PATCHES
@@ -230,7 +227,7 @@ def mock_input(prompt=""):
         print("[mock] no scripted answer left; using default empty")
         ans = ""
     print(ans)
-    if "after starting the reboot" in prompt and STATE.manual_reboot:
+    if "after starting the reboot" in prompt:
         STATE.start_reboot("manual")
     return ans
 
@@ -440,20 +437,6 @@ class MockSsh:
             # These do not work from media on this firmware; the patcher must
             # not use them.
             return self._res(1, "not available to media\n")
-
-        if user == "media" and "systemctl reboot" in cmd:
-            if STATE.manual_reboot and STATE.reboot_seq == 0:
-                return self._res(
-                    1, "Failed to reboot system via logind: Access denied\n")
-            STATE.start_reboot("systemd")
-            return self._res(0, "")
-
-        if user == "media" and cmd == "reboot":
-            return self._res(1, "reboot: must be root\n")
-
-        if user == "root" and "reboot" in cmd:
-            STATE.start_reboot("root")
-            return self._res(0, "")
 
         if user == "media" and "preflight.sh" in cmd:
             print("[mock] media preflight OK")

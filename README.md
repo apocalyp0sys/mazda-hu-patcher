@@ -27,8 +27,8 @@ docker build -t mazda-tools .
 
 1. Connects to the HU over SSH and checks **root** access with a key.
 2. If root is unavailable, offers bootstrap via the `media` account using the
-   bundled bootstrap payload (`bootstrap/v2`), asks for a reboot and waits for
-   root.
+   bundled bootstrap payload (`bootstrap/v2`), prints the manual reboot
+   instruction and waits for root.
 3. Shows the status of all discovered patches, for example:
    - **A) GPS/timezone** — `/svp/lib/libsvp_basic.so`;
    - **B) touch while driving** — `/svp/bin/svp.svc.engineering`;
@@ -44,8 +44,8 @@ docker build -t mazda-tools .
    - `Conflict (unknown file version)` is not selectable and is skipped.
 5. For A, during installation, asks for a UTC offset or an IANA zone and
    configures `/etc/localtime` + `/etc/timezone` (with a backup).
-6. Applies all selected patches, then offers to reboot the HU and waits for
-   root to come back.
+6. Applies all selected patches, prints the manual reboot instruction and
+   waits for root to come back.
 
 ## Running
 
@@ -178,7 +178,7 @@ prompt or start bootstrap. During bootstrap:
 
 On the first run, if no SSH keys are found and `--key` was not given, the
 patcher skips the root-key prompt and goes straight to the `media` bootstrap.
-It still asks before rebooting the HU.
+It still asks the operator to reboot the HU.
 
 The private key is never copied anywhere.
 
@@ -195,13 +195,11 @@ root-key prompt). The patcher uses the bundled payload in `bootstrap/v2`:
 3. `preflight.sh` and `install.sh --key ...` are run as `media`.
 4. The staged key is read back from `/svp/unlock/authorized_key.pub` and
    compared with the local public key; the `/home` mount layout is reported.
-5. The script offers a reboot and tries `/bin/systemctl reboot` once. The
-   `media` account cannot use `svp.util.powerctrl` (no `svp.power` proxy) or
-   `svp.util.remote.reboot` (`/dev/mcu_spi` is root-only), so on this firmware
-   a manual reboot is the normal path: use the engineering menu or power-cycle
-   the HU.
-   The patcher verifies that a reboot actually started (boot id), then waits
-   for root.
+5. The patcher prints the manual reboot instruction:
+   `To reboot, hold Music, Favorite (Star) and Volume On/Off buttons for
+   5 seconds, then select 'End Diag Mode'`.
+   It never issues a reboot command. After you press Enter it waits for the
+   boot id to change and for root.
 
 If `media` has a non-empty password:
 
@@ -504,7 +502,8 @@ file; reinstall the patch to recreate it.
   mount) — that is the fail-safe bundled bootstrap method.
 - The bootstrap does not modify existing scripts and is fail-safe (a shim
   error does not break boot).
-- Reboots only happen after confirmation.
+- The patcher never issues a reboot command. It prints the manual button
+  instruction and waits for the boot id/root.
 - If root does not come back after a reboot, the script reports it and offers
   to wait longer; by that point all data has already been fully written to
   disk.
@@ -589,7 +588,7 @@ Scenarios:
 | `no-root` | no root, no patches installed | bootstrap, select all, timezone `+3`, reboot | root present, A-D installed |
 | `root-one` | root present, A installed, B-D not installed | select all (A remove, B-D install), reboot | A rolled back, B-D installed |
 | `conflict` | no root, B has an unknown version | bootstrap, select A/C/D, reboot | root present, B conflict |
-| `manual-reboot` | no root, media cannot reboot | bootstrap, systemd reboot denied, manual reboot, select all | root present, A-D installed |
+| `manual-reboot` | no root, manual reboot | bootstrap, manual reboot instruction, select all | root present, A-D installed |
 | `outdated` | C installed with version 0.9.0 | select C update, reboot | C updated to 1.0.0 |
 | `newer` | C installed with version 9.9.9 | menu shows conflict, quit | no changes |
 
@@ -615,8 +614,9 @@ Mock mode is only for UI/scenario testing; on a real HU use the normal
 
 ## Boot speed diagnostics
 
-If the HU takes a long time to come back after a patcher reboot (for example a
-black screen for several minutes), see [`BOOT-SPEED.md`](BOOT-SPEED.md). It
+If the HU takes a long time to come back after a reboot requested by the
+patcher (for example a black screen for several minutes), see
+[`BOOT-SPEED.md`](BOOT-SPEED.md). It
 explains how to separate systemd shutdown time from boot time, which firmware
 timeouts are involved, and how to check whether Fast Login has taken effect.
 

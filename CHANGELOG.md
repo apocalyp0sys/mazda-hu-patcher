@@ -16,6 +16,14 @@ and this project uses semantic versioning (`MAJOR.MINOR.PATCH`).
   `HU_PATCHER_NO_LOG=1` to control it. Passwords and private key contents are
   never logged.
 
+### Changed
+
+- The patcher no longer issues any reboot command (`reboot`,
+  `systemctl reboot`, `svp.util.powerctrl`, `svp.util.remote.reboot`). It
+  prints the manual instruction: hold Music, Favorite (Star) and Volume
+  On/Off for 5 seconds, then select `End Diag Mode`; it then waits for the
+  boot id and root.
+
 ## [v0.2.0] - 2026-11-23
 
 ### Added

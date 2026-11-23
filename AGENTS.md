@@ -193,12 +193,11 @@ handles this.
 - An unknown file version must produce `Conflict (unknown file version)` and
   no writes.
 - If no local SSH keys exist, the patcher goes directly to the `media`
-  bootstrap without the root-key prompt; keep the reboot confirmation.
-- For a media reboot, try `/bin/systemctl reboot` once, then ask the user to
-  use the engineering menu or power-cycle. Do not use
-  `svp.util.powerctrl --reboot` (no `svp.power` proxy) or
-  `/svp/bin/svp.util.remote.reboot` (it cannot open `/dev/mcu_spi`) from
-  media. Verify the reboot actually started via the boot id.
+  bootstrap without the root-key prompt; keep the manual reboot confirmation.
+- Never issue a reboot command (`reboot`, `systemctl reboot`,
+  `svp.util.powerctrl`, `svp.util.remote.reboot`). Print the operator
+  instruction: hold Music + Favorite (Star) + Volume On/Off for 5 seconds,
+  then select `End Diag Mode`. Wait for the boot id/root afterwards.
 - An SSH timeout is not a wrong key: `root_probe()` distinguishes
   `ok`/`timeout`/`denied`. On `timeout`, ask before bootstrapping; never
   fall through to the media bootstrap silently.

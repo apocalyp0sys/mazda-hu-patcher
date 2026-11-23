@@ -91,7 +91,8 @@ check "manual-reboot: A installed" grep -q 'A (GPS)   : patched' "$OUT"
 check "manual-reboot: B installed" grep -q 'B (touch) : patched' "$OUT"
 check "manual-reboot: C installed" grep -Eq '^  C +: patched' "$OUT"
 check "manual-reboot: D installed" grep -Eq '^  D +: patched' "$OUT"
-check "manual-reboot: manual path" grep -q 'Automatic reboot is not available' "$OUT"
+check "manual-reboot: manual instruction" grep -q 'hold Music, Favorite' "$OUT"
+check "manual-reboot: diag mode" grep -q "End Diag Mode" "$OUT"
 check_calls "manual-reboot" 45
 
 run_scenario outdated

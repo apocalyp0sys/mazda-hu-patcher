@@ -1,39 +1,39 @@
 # Boot speed diagnostics
 
-How to find out why the HU takes a long time to come back after a reboot from
-the patcher, and how to tell shutdown time from boot time.
+How to find out why the HU takes a long time to come back after a reboot
+requested by the patcher, and how to tell shutdown time from boot time.
 
 This document is for the **Mazda CMU KBST-41-47-M5 / DS04L** and the bundled
 patcher.
 
 ## 1. What the patcher actually does
 
-After a patch install or rollback the patcher asks whether to reboot and calls:
+After a patch install or rollback the patcher **does not issue a reboot
+command**. It prints:
 
-```sh
-sync; (reboot >/dev/null 2>&1 &); true
+```text
+To reboot, hold Music, Favorite (Star) and Volume On/Off buttons for
+5 seconds, then select 'End Diag Mode'.
 ```
 
-On this firmware:
+When you use those buttons, the unit performs a normal systemd shutdown:
 
 ```text
 /sbin/reboot -> /bin/systemctl
 ```
 
-So this is a full **systemd shutdown**, not an immediate reset:
+So it is not an immediate reset:
 
 1. the UI (`weston`) stops and the screen goes black almost immediately;
 2. systemd stops the remaining services, with per-unit stop timeouts;
 3. the unit reboots and starts the kernel, systemd and the SVP stack;
 4. the UI comes back.
 
-The patcher then waits for root SSH to return (currently 300 s). A 5-minute
-boot can therefore look like a patcher failure even when the HU is still
-booting normally.
+The patcher waits for the boot id to change and for root SSH to return
+(currently up to 600 s). A 5-minute boot can therefore look like a patcher
+failure even when the HU is still booting normally.
 
-The bootstrap path is different: it tries `/bin/systemctl reboot` as `media`,
-and if that is denied the operator power-cycles the unit or uses the
-engineering menu.
+The bootstrap path prints the same instruction and waits the same way.
 
 ## 2. Known slow points on this firmware
 
@@ -96,14 +96,14 @@ Use the result like this:
 
 Record the wall-clock times of:
 
-1. reboot command / patcher prompt;
+1. button reboot / patcher prompt;
 2. last successful ping before the gap;
 3. first successful ping after the gap;
 4. first successful root SSH;
 5. UI back on screen.
 
-Compare with a reboot from the engineering menu. If the engineering-menu
-reboot is also ~5 minutes, the patcher is not the cause.
+Compare with a manual button reboot. If that reboot is also ~5 minutes, the
+patcher is not the cause.
 
 ## 4. Evidence to collect on the HU
 
@@ -183,14 +183,15 @@ separates "UI is late" from "system is still shutting down".
 | `Timed out stopping svp-launcher.service` | forking service cannot be stopped cleanly | firmware/systemd change (outside the patcher) |
 | `EXT4-fs recovery` / fsck | unclean shutdown or failing eMMC/SD | avoid power-cycles; check the card |
 | ping alive but screen black | OS is up, UI/display is late | check weston/SVP UI startup |
-| engineering-menu reboot is also slow | firmware baseline | not a patcher problem |
+| manual button reboot is also slow | firmware baseline | not a patcher problem |
 | first reboot slow, second fast | Fast Login mask took effect | expected |
 
 ## 6. Safe test procedure
 
-1. **Baseline:** reboot from the engineering menu, measure with ping and the
+1. **Baseline:** reboot with the button instruction, measure with ping and the
    journal. Do not use the patcher.
-2. **Patcher reboot:** reboot from the patcher, measure the same way.
+2. **Patcher-requested reboot:** apply a change with the patcher, then use the
+   same button instruction and measure the same way.
 3. **Fast Login:** if it is not installed, install it, then reboot **twice**.
    Measure the first and the second reboot separately.
 4. Keep the ignition/ACC on for the whole test.
@@ -200,17 +201,12 @@ separates "UI is late" from "system is still shutting down".
 
 ## 7. Patcher-side notes
 
-- `reboot_root()` waits up to 300 s for root. If your unit needs longer, the
-  patcher prints a timeout warning even though the HU may still be booting.
+- The patcher never issues a reboot command. It prints the button instruction
+  and waits for the boot id to change and root to return (up to 600 s).
   Wait for the UI and verify manually before assuming a failure.
-- The bootstrap path waits 90 s for the automatic `systemctl` reboot and up to
-  180 s for the manual one. These are detection windows, not a limit on the
-  HU's boot time.
-- The patcher does not use `reboot -f` / `systemctl reboot -f`. A forced reboot
-  skips the clean shutdown and risks data loss on ext4; use it only as a
-  deliberate experiment.
-- A manual reboot from the engineering menu completely bypasses the patcher's
-  reboot code, so it is a useful baseline.
+- The wait is a detection window, not a limit on the HU's boot time.
+- A reboot with the button instruction is the same clean systemd shutdown
+  measured here; it is also the baseline for comparison.
 
 ## 8. What to include in a bug report
 
@@ -221,8 +217,8 @@ separates "UI is late" from "system is still shutting down".
 - whether ping and SSH were alive during the black screen;
 - whether Fast Login is installed and whether the slow reboot was the first or
   the second one after installing it;
-- ignition/ACC state and whether the same delay happens from the engineering
-  menu.
+- ignition/ACC state and whether the same delay happens with the manual
+  button reboot.
 
 ## See also
 

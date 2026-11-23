@@ -1222,32 +1222,45 @@ def media_boot_id(ssh):
     return value or None
 
 
-def reboot_command_failed(out, returncode):
-    text = (out or "").lower()
-    markers = ("failed", "error", "not found", "denied", "permission",
-               "cannot", "unable", "authentication", "not authorized")
-    if any(marker in text for marker in markers):
-        return True
-    # 124 = timeout, 255 = SSH connection dropped: the reboot may be starting.
-    return returncode not in (0, 124, 255)
+def print_reboot_instruction():
+    print()
+    print("Reboot the HU:")
+    print("  To reboot, hold Music, Favorite (Star) and Volume On/Off")
+    print("  buttons for 5 seconds, then select 'End Diag Mode'.")
+    print()
+    log_only("[reboot] instruction: hold Music + Favorite + Volume "
+             "On/Off for 5 s, then End Diag Mode")
 
 
-def wait_for_reboot(ssh, old_boot_id, timeout=90, interval=3):
+def wait_for_reboot(ssh, old_boot_id, timeout=90, interval=3,
+                    source="media"):
     print("Waiting for the reboot", end="", flush=True)
-    log_only("[reboot] wait for boot change (old=%s, timeout=%ss)" %
-             (old_boot_id, timeout))
+    log_only("[reboot] wait for boot change via %s (old=%s, timeout=%ss)" %
+             (source, old_boot_id, timeout))
     deadline = time.time() + timeout
+    saw_down = False
     while time.time() < deadline:
-        if old_boot_id:
+        if source == "root":
+            ok, new_id = root_probe_boot_id(ssh)
+            if not ok:
+                saw_down = True
+            elif old_boot_id:
+                if new_id and new_id != old_boot_id:
+                    print(" reboot detected")
+                    log_only("[reboot] detected (new=%r, saw_down=%s)" %
+                             (new_id, saw_down))
+                    return True
+            elif saw_down:
+                print(" reboot detected")
+                log_only("[reboot] detected (new=%r, saw_down=%s)" %
+                         (new_id, saw_down))
+                return True
+        else:
             new_id = media_boot_id(ssh)
-            if new_id is None or new_id != old_boot_id:
+            if new_id is None or (old_boot_id and new_id != old_boot_id):
                 print(" reboot detected")
                 log_only("[reboot] detected (new=%r)" % new_id)
                 return True
-        elif root_ok(ssh, timeout=45):
-            print(" root is available")
-            log_only("[reboot] root is available")
-            return True
         print(".", end="", flush=True)
         time.sleep(interval)
     print(" not detected")
@@ -2483,7 +2496,7 @@ def bootstrap_root(ssh, args, assume_media=False):
     print("Root access is not available.")
     if assume_media:
         print("No SSH keys found; using the media bootstrap.")
-    elif not ask_yes("Bootstrap root via the media account and reboot?", True):
+    elif not ask_yes("Bootstrap root via the media account?", True):
         return False
     if not V2_DIR.is_dir():
         print("ERROR: missing bootstrap payload: %s" % V2_DIR)
@@ -2565,50 +2578,21 @@ def bootstrap_root(ssh, args, assume_media=False):
 
     print()
     print("Bootstrap installed. A reboot is required.")
-    if not ask_yes("Reboot the HU now?", True):
-        print("Reboot later, then run this script again.")
-        return False
-
     ssh.key = key
     old_boot_id = media_boot_id(ssh)
-    rebooted = False
+    print_reboot_instruction()
+    ans = ask_text("Press Enter after starting the reboot (or type 'skip')", "")
+    if ans.lower() == "skip":
+        print("Reboot later, then run this script again.")
+        return False
+    if old_boot_id and not wait_for_reboot(
+            ssh, old_boot_id, timeout=600, source="media"):
+        print("WARNING: no reboot detected yet; waiting for root anyway.")
 
-    # powerctrl needs a working svp.power proxy, and remote.reboot needs
-    # /dev/mcu_spi; neither is available to media on this firmware.  systemd
-    # is the only cheap automatic attempt left.
-    print()
-    print("Trying an automatic reboot via systemd ...")
-    r = ssh.run("media", "/bin/systemctl reboot", batch=False, timeout=20)
-    out = (r.stdout or "").strip()
-    if out:
-        print(out)
-    if reboot_command_failed(out, r.returncode):
-        print("Automatic reboot via systemd is not available.")
-    else:
-        print("Reboot command accepted (systemd).")
-        if wait_for_reboot(ssh, old_boot_id, timeout=90):
-            rebooted = True
-        else:
-            print("No reboot detected; a manual reboot is required.")
-
-    if not rebooted:
-        print()
-        print("Automatic reboot is not available on this firmware.")
-        print("Reboot via the engineering menu or power-cycle the HU now.")
-        ans = ask_text("Press Enter after starting the reboot", "")
-        if ans.lower() == "skip":
-            print("Reboot later, then run this script again.")
-            return False
-        if old_boot_id and not wait_for_reboot(ssh, old_boot_id, timeout=180):
-            print("WARNING: no reboot detected yet; waiting for root anyway.")
-    else:
-        print()
-        print("HU reboot detected.")
-
-    ok = wait_root(ssh, timeout=300)
+    ok = wait_root(ssh, timeout=600)
     if not ok:
-        if ask_yes("Root still not available. Wait another 180 s?", True):
-            ok = wait_root(ssh, timeout=180)
+        if ask_yes("Root still not available. Wait another 300 s?", True):
+            ok = wait_root(ssh, timeout=300)
     if not ok:
         print("ERROR: root access did not come up. Check the HU and rerun.")
         return False
@@ -3069,27 +3053,6 @@ def root_probe_boot_id(ssh, timeout=45):
     return True, (lines[1] if len(lines) > 1 else None)
 
 
-def reboot_root(ssh, timeout=300):
-    old_id = remote_boot_id(ssh)
-    log_only("[reboot] root reboot (old boot id=%s)" % old_id)
-    print("Rebooting HU ...")
-    ssh.run("root", "sync; (reboot >/dev/null 2>&1 &); true", timeout=60)
-    time.sleep(5)
-    print("Waiting for the new boot", end="", flush=True)
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ok, new_id = root_probe_boot_id(ssh)
-        if ok and (old_id is None or (new_id and new_id != old_id)):
-            print(" OK")
-            log_only("[reboot] new boot id=%s" % new_id)
-            return True
-        print(".", end="", flush=True)
-        time.sleep(5)
-    print(" timeout")
-    log_only("[reboot] root did not return within %ss" % timeout)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # patch hook API
 # ---------------------------------------------------------------------------
@@ -3228,7 +3191,7 @@ def main():
         print_selected_actions(actions, selected)
         changed, failed = apply_patch_actions(ssh, actions, selected)
 
-        # 9. reboot
+        # 9. manual reboot
         print()
         if changed:
             print("Changes:")
@@ -3238,21 +3201,38 @@ def main():
             print("Failed:")
             for x in failed:
                 print("  - %s" % x)
-        if not changed and not failed:
-            print("No patch changes were made.")
-        if ask_yes("Reboot the HU now to apply changes?", bool(changed)):
-            if reboot_root(ssh):
-                print("Root is back. Final status:")
-                final = snapshot_status(ssh)
-                if final is None:
-                    print("WARNING: cannot read the final patch status.")
-                else:
-                    print_status(ssh, final)
-                return 0
+        if not changed:
+            if failed:
+                print("No patch changes were applied.")
+            else:
+                print("No patch changes were made.")
+            return 0
+
+        old_id = remote_boot_id(ssh)
+        print_reboot_instruction()
+        ans = ask_text("Press Enter after starting the reboot (or type 'skip')", "")
+        if ans.lower() == "skip":
+            print("Reboot later to apply the changes.")
+            return 0
+        if old_id and not wait_for_reboot(
+                ssh, old_id, timeout=600, source="root"):
+            print("WARNING: no reboot detected yet; waiting for root anyway.")
+
+        ok = wait_root(ssh, timeout=600)
+        if not ok:
+            if ask_yes("Root still not available. Wait another 300 s?", True):
+                ok = wait_root(ssh, timeout=300)
+        if not ok:
             print("WARNING: root SSH did not come back within the timeout.")
             print("         The HU may need more time; check it manually.")
             return 1
-        print("Reboot later to apply the changes.")
+
+        print("Root is back. Final status:")
+        final = snapshot_status(ssh)
+        if final is None:
+            print("WARNING: cannot read the final patch status.")
+        else:
+            print_status(ssh, final)
         return 0
     finally:
         ssh.cleanup()
