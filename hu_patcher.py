@@ -2987,6 +2987,15 @@ def select_patch_actions(actions):
             selected.add(index)
 
 
+def apply_priority(actions, index):
+    action = actions[index]
+    if not action["patch"].get("apply_first"):
+        return (1, index)
+    if action["mode"] == "rollback":
+        return (2, index)
+    return (0, index)
+
+
 def print_selected_actions(actions, selected):
     print()
     print("Selected actions:")
@@ -2995,17 +3004,29 @@ def print_selected_actions(actions, selected):
         print("  [x] %s) %s: %s" % (
             action["patch"]["id"], action["patch"]["name"],
             action_text(action)))
+    for index in sorted(selected):
+        action = actions[index]
+        if not action["patch"].get("apply_first"):
+            continue
+        if action["mode"] == "rollback":
+            print("  (Fast Login is removed last.)")
+        else:
+            print("  (Fast Login is applied first.)")
+        break
 
 
 def apply_patch_actions(ssh, actions, selected):
     changed = []
     failed = []
-    for index in sorted(selected):
+    order = sorted(selected, key=lambda i: apply_priority(actions, i))
+    for index in order:
         action = actions[index]
         patch = action["patch"]
         mode = action["mode"]
         log_only("[apply] %s) %s: %s" % (patch["id"], patch["name"],
                                           mode or "?"))
+        if patch.get("apply_first"):
+            log_only("[apply] priority: %s (%s)" % (patch["id"], mode))
         ok = False
         for attempt in range(1, 4):
             if mode == "update":

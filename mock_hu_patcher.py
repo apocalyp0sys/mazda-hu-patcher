@@ -131,6 +131,21 @@ SCENARIOS = {
             "q",        # leave without changes
         ],
     },
+    "rollback-all": {
+        "title": "all patches installed; roll everything back",
+        "root": True,
+        "gps": "patched",
+        "touch": "patched",
+        "callfix": "patched",
+        "login": "patched",
+        "localtime": "/usr/share/zoneinfo/Asia/Shanghai",
+        "timezone": "Asia/Shanghai",
+        "answers": [
+            "1 2 3 4",  # select all for removal
+            "",         # apply
+            "",         # final manual reboot
+        ],
+    },
 }
 
 ALIASES = {

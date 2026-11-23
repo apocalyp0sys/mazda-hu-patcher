@@ -58,12 +58,33 @@ check_calls() {
     fi
 }
 
+check_first_apply() {
+    desc=$1
+    want=$2
+    first=$(grep -m1 '^== [A-Z]) ' "$OUT" 2>/dev/null || true)
+    case "$first" in
+        *"$want"*) echo "ok   - $desc: $first" ;;
+        *) echo "FAIL - $desc: first apply '${first:-none}'"; fail=1 ;;
+    esac
+}
+
+check_last_apply() {
+    desc=$1
+    want=$2
+    last=$(grep '^== [A-Z]) ' "$OUT" 2>/dev/null | tail -n 1 || true)
+    case "$last" in
+        *"$want"*) echo "ok   - $desc: $last" ;;
+        *) echo "FAIL - $desc: last apply '${last:-none}'"; fail=1 ;;
+    esac
+}
+
 run_scenario no-root
 check "no-root: root obtained" grep -q 'root      : yes' "$OUT"
 check "no-root: A installed" grep -q 'A (GPS)   : patched' "$OUT"
 check "no-root: B installed" grep -q 'B (touch) : patched' "$OUT"
 check "no-root: C installed" grep -Eq '^  C +: patched' "$OUT"
 check "no-root: D installed" grep -Eq '^  D +: patched' "$OUT"
+check_first_apply "no-root: Fast Login first" "D) Fast Login"
 check "no-root: timezone +3" grep -q 'Etc/GMT-3' "$OUT"
 check_calls "no-root" 45
 
@@ -73,6 +94,7 @@ check "root-one: A rolled back" grep -q 'A (GPS)   : original' "$OUT"
 check "root-one: B installed" grep -q 'B (touch) : patched' "$OUT"
 check "root-one: C installed" grep -Eq '^  C +: patched' "$OUT"
 check "root-one: D installed" grep -Eq '^  D +: patched' "$OUT"
+check_first_apply "root-one: Fast Login first" "D) Fast Login"
 check "root-one: timezone restored" grep -q 'timezone  : Asia/Shanghai' "$OUT"
 check_calls "root-one" 30
 
@@ -107,6 +129,13 @@ check "newer: version" grep -q '9.9.9' "$OUT"
 check "newer: conflict" grep -q 'Conflict (unknown file version)' "$OUT"
 check "newer: no changes" grep -q 'No patch changes selected' "$OUT"
 check_calls "newer" 5
+
+run_scenario rollback-all
+check "rollback-all: A removed" grep -q 'A (GPS)   : original' "$OUT"
+check "rollback-all: D removed" grep -q 'D         : original' "$OUT"
+check_first_apply "rollback-all: normal first" "A) GPS/timezone"
+check_last_apply "rollback-all: Fast Login last" "D) Fast Login"
+check_calls "rollback-all" 40
 
 echo
 if [ "$fail" -eq 0 ]; then

@@ -264,6 +264,9 @@ def _load_manifest(patch_dir, manifest_path):
         _error(patch_dir,
                "version must look like 1, 1.2 or 1.2.3 (got %r)" % version)
     order = _parse_int(patch_dir, data.get("order", 100), "order")
+    apply_first = data.get("apply_first", False)
+    if not isinstance(apply_first, bool):
+        _error(patch_dir, "apply_first must be true or false")
 
     default_build = data.get("build")
     if "files" in data:
@@ -305,6 +308,7 @@ def _load_manifest(patch_dir, manifest_path):
         "version": version,
         "description": str(data.get("description", "")),
         "order": order,
+        "apply_first": apply_first,
         "files": files,
         "hook_path": hook_path,
         "_hook": hook,

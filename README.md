@@ -90,6 +90,9 @@ Selected actions:
 ask whether to install the missing files or roll back the installed ones, and
 `Conflict` rows are `[-]` and cannot be selected.
 
+When selected, **Fast Login** is applied before the other patches (and removed
+after them) so the remaining SSH sessions are fast.
+
 Useful options:
 
 ```sh
@@ -579,6 +582,7 @@ python mock_hu_patcher.py --scenario conflict
 python mock_hu_patcher.py --scenario manual-reboot
 python mock_hu_patcher.py --scenario outdated
 python mock_hu_patcher.py --scenario newer
+python mock_hu_patcher.py --scenario rollback-all
 ```
 
 Scenarios:
@@ -591,6 +595,7 @@ Scenarios:
 | `manual-reboot` | no root, manual reboot | bootstrap, manual reboot instruction, select all | root present, A-D installed |
 | `outdated` | C installed with version 0.9.0 | select C update, reboot | C updated to 1.0.0 |
 | `newer` | C installed with version 9.9.9 | menu shows conflict, quit | no changes |
+| `rollback-all` | all patches installed | select all for removal, reboot | A-D removed |
 
 Aliases: `no-root-no-patches`, `root-one-patch`, `no-root-conflict`, `manual`.
 

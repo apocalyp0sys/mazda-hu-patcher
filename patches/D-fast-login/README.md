@@ -23,6 +23,13 @@ affected, and no global unit or service file is changed.
 - Rollback: remove the symlink. The directories are left in place.
 - Target takes effect on the next root login, or after a reboot.
 
+## Apply order
+
+`patch.json` sets `"apply_first": true`, so the patcher applies the mask before
+other selected patches and removes it after them. Once the symlink exists, the
+next root user-manager start skips `lightmediascanner`; the remaining
+SSH/SCP-heavy patch operations should be faster.
+
 If the target already exists as a regular file or points somewhere else, the
 patcher reports a conflict and changes nothing. The hook also refuses to
 install when `/etc/passwd` gives root a home other than `/home/root`.

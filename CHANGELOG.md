@@ -23,6 +23,9 @@ and this project uses semantic versioning (`MAJOR.MINOR.PATCH`).
   prints the manual instruction: hold Music, Favorite (Star) and Volume
   On/Off for 5 seconds, then select `End Diag Mode`; it then waits for the
   boot id and root.
+- Fast Login (`apply_first: true`) is applied before other selected patches
+  and removed after them. This makes the remaining SSH sessions fast on units
+  where the root user manager is restarted per session.
 
 ## [v0.2.0] - 2026-11-23
 

@@ -104,6 +104,9 @@ docker run --rm -e VERSION=test -v "$PWD:/work" -w /work mazda-tools \
 - `order` controls display order; `enabled: false` disables without deleting.
 - `version` is required in spirit (`1`, `1.2` or `1.2.3`; default `1.0.0`).
   Bump it whenever the patch payload or installed files change.
+- `apply_first: true` applies a patch before the other selected patches and
+  removes it last. Fast Login uses this to speed up the remaining SSH
+  sessions.
 - `files[]` is the list of operations. Each entry has `op: "replace"`
   (default), `op: "create"` or `op: "symlink"`.
 - `replace` requires `original`, `patched`, `sha256.original` and

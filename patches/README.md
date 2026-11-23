@@ -116,6 +116,7 @@ Fields:
 | `id`, `key`, `name` | display and internal identifiers |
 | `version` | patch version (`1`, `1.2` or `1.2.3`; default `1.0.0`) |
 | `order` | display order (lower first) |
+| `apply_first` | if `true`, apply before other selected patches; remove last |
 | `enabled` | `false` hides the patch without deleting it |
 | `files` | non-empty array of file operations |
 | `hook` | optional Python hook |
@@ -176,6 +177,10 @@ state. If the old files no longer match the saved state, the update is refused
 before any removal.
 
 Bump `version` whenever a patch payload or its installed files change.
+
+`apply_first: true` makes the patcher apply the patch before the other selected
+patches (and remove it after them). Fast Login uses this to enable fast root
+logins before the remaining SSH-heavy work.
 
 ### Building multi-file patches
 

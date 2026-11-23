@@ -6,6 +6,7 @@
   "version": "1.0.0",
   "description": "Masks lightmediascanner.service for root, removing the ~25 s SSH login delay caused by user@0.service waiting for it.",
   "order": 40,
+  "apply_first": true,
   "enabled": true,
   "hook": "hook.py",
   "files": [
