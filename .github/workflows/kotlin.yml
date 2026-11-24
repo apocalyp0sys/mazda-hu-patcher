@@ -47,7 +47,9 @@ jobs:
           ./gradlew --no-daemon
           :core:allTests
           :desktopApp:compileKotlin
+          :spike:compileKotlin
           :androidApp:assembleDebug
+          :androidApp:compileDebugAndroidTestKotlin
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

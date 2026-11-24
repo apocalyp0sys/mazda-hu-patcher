@@ -17,4 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "hu-patcher-kmp"
 
-include(":core", ":ui", ":androidApp", ":desktopApp")
+include(":core", ":ui", ":androidApp", ":desktopApp", ":spike")

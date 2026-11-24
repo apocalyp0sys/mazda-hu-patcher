@@ -23,6 +23,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = patcherVersion
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
@@ -51,4 +52,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(compose.runtime)
     implementation(compose.ui)
+
+    androidTestImplementation(project(":core"))
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
