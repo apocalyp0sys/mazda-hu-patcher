@@ -67,6 +67,9 @@ Windows `.exe`/`.msi` packaging requires WiX 3.14 in `PATH`.
 
 ## SSH spike
 
+Runbook for a unit with real HU access:
+[REAL-HU.md](REAL-HU.md).
+
 Generate the patcher's own key (default `id_ed25519` in the output directory):
 
 ```sh
