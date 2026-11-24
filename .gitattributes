@@ -11,3 +11,7 @@
 *.orig binary
 *.patched binary
 patches/*/svp-callfix binary
+
+kotlin/gradlew text eol=lf
+kotlin/gradlew.bat text eol=crlf
+kotlin/**/*.jar binary
